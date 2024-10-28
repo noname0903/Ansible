@@ -1,0 +1,74 @@
+---
+- name: MySQL Configuration and Backup Playbook
+  hosts: localhost
+  become: yes
+  tasks:
+    # Task 1: Extract log_file and log_pos from MySQL backup
+    - name: Read the MySQL backup file for log_file and log_pos
+      shell: |
+        grep -m 1 "CHANGE MASTER TO" /var/backups/mysql/master_backup.sql |
+        grep -oE "MASTER_LOG_FILE='[^']*'|MASTER_LOG_POS=[0-9]+" |
+        awk -F"=" '{print $2}' | tr -d "'"
+      register: log_values
+
+    - name: Display log_file and log_pos values
+      debug:
+        var: log_values.stdout_lines
+
+    # Task 2: Ensure MySQL slow log and error log configuration
+    - name: Configure MySQL slow and error logs
+      ansible.builtin.lineinfile:
+        path: /etc/mysql/my.cnf
+        regexp: "{{ item.regexp }}"
+        line: "{{ item.line }}"
+      loop:
+        - { regexp: '^slow_query_log', line: 'slow_query_log = 1' }
+        - { regexp: '^slow_query_log_file', line: 'slow_query_log_file = /var/log/mysql/slow-query.log' }
+        - { regexp: '^long_query_time', line: 'long_query_time = 2' }
+        - { regexp: '^log_queries_not_using_indexes', line: 'log_queries_not_using_indexes = 1' }
+        - { regexp: '^log_error', line: 'log_error = /var/log/mysql/error.log' }
+
+    - name: Ensure MySQL slow log file exists
+      ansible.builtin.file:
+        path: /var/log/mysql/slow-query.log
+        state: touch
+        owner: mysql
+        group: mysql
+        mode: '0640'
+
+    - name: Ensure MySQL error log file exists
+      ansible.builtin.file:
+        path: /var/log/mysql/error.log
+        state: touch
+        owner: mysql
+        group: mysql
+        mode: '0640'
+
+    - name: Restart MySQL to apply changes
+      ansible.builtin.systemd:
+        name: mysql
+        state: restarted
+
+    # Task 3: Setup daily MySQL backup
+    - name: Ensure backup directory exists
+      file:
+        path: /var/backups/mysql
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Create MySQL backup using cron job
+      cron:
+        name: "Daily MySQL backup"
+        minute: "0"
+        hour: "1"  # Schedule backup at 1 AM
+        user: root
+        job: "/usr/bin/mysqldump -u root -p juniper@123 --all-databases --master-data=2 --single-transaction --quick --lock-tables=false > /var/backups/mysql/master_backup.sql"
+
+    - name: Ensure backup file has correct permissions
+      file:
+        path: /var/backups/mysql/master_backup.sql
+        owner: root
+        group: root
+        mode: '0640'
