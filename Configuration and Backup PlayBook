@@ -3,19 +3,8 @@
   hosts: localhost
   become: yes
   tasks:
-    # Task 1: Extract log_file and log_pos from MySQL backup
-    - name: Read the MySQL backup file for log_file and log_pos
-      shell: |
-        grep -m 1 "CHANGE MASTER TO" /var/backups/mysql/master_backup.sql |
-        grep -oE "MASTER_LOG_FILE='[^']*'|MASTER_LOG_POS=[0-9]+" |
-        awk -F"=" '{print $2}' | tr -d "'"
-      register: log_values
-
-    - name: Display log_file and log_pos values
-      debug:
-        var: log_values.stdout_lines
-
-    # Task 2: Ensure MySQL slow log and error log configuration
+    
+     # Task 1: Ensure MySQL slow log and error log configuration
     - name: Configure MySQL slow and error logs
       ansible.builtin.lineinfile:
         path: /etc/mysql/my.cnf
@@ -44,12 +33,7 @@
         group: mysql
         mode: '0640'
 
-    - name: Restart MySQL to apply changes
-      ansible.builtin.systemd:
-        name: mysql
-        state: restarted
-
-    # Task 3: Setup daily MySQL backup
+     # Task 2: Setup daily MySQL backup
     - name: Ensure backup directory exists
       file:
         path: /var/backups/mysql
@@ -72,3 +56,19 @@
         owner: root
         group: root
         mode: '0640'
+     # Task 1: Extract log_file and log_pos from MySQL backup
+    - name: Read the MySQL backup file for log_file and log_pos
+      shell: |
+        grep -m 1 "CHANGE MASTER TO" /var/backups/mysql/master_backup.sql |
+        grep -oE "MASTER_LOG_FILE='[^']*'|MASTER_LOG_POS=[0-9]+" |
+        awk -F"=" '{print $2}' | tr -d "'"
+      register: log_values
+
+    - name: Display log_file and log_pos values
+      debug:
+        var: log_values.stdout_lines 
+   
+    - name: Restart MySQL to apply changes
+      ansible.builtin.systemd:
+        name: mysql
+        state: restarted
